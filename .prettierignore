@@ -1,6 +1,4 @@
-/.linaria-cache
-/coverage
-/dist
-/lib
-/node_modules
-/package-lock.json
+*.js
+*.json
+*.css
+/website/routeTree.gen.ts

@@ -1,43 +1,39 @@
-import { memo, forwardRef } from 'react';
-import type { RefAttributes, CSSProperties } from 'react';
+import { memo, useMemo } from 'react';
 import clsx from 'clsx';
 
-import Cell from './Cell';
-import { RowSelectionProvider, useLatestFunc, useCombinedRefs, useRovingRowRef } from './hooks';
-import { getColSpan } from './utils';
-import { rowClassname } from './style';
-import type { RowRendererProps } from './types';
+import { RowSelectionContext, useLatestFunc, type RowSelectionContextValue } from './hooks';
+import { getColSpan, getRowStyle } from './utils';
+import type { CalculatedColumn, RenderRowProps } from './types';
+import { useDefaultRenderers } from './DataGridDefaultRenderersContext';
+import { rowClassname, rowSelectedClassname } from './style/row';
 
-function Row<R, SR>(
-  {
-    className,
-    rowIdx,
-    selectedCellIdx,
-    isRowSelected,
-    copiedCellIdx,
-    draggedOverCellIdx,
-    lastFrozenColumnIndex,
-    row,
-    viewportColumns,
-    selectedCellEditor,
-    selectedCellDragHandle,
-    onRowClick,
-    onRowDoubleClick,
-    rowClass,
-    setDraggedOverRowIdx,
-    onMouseEnter,
-    top,
-    height,
-    onRowChange,
-    selectCell,
-    ...props
-  }: RowRendererProps<R, SR>,
-  ref: React.Ref<HTMLDivElement>
-) {
-  const { ref: rowRef, tabIndex, className: rovingClassName } = useRovingRowRef(selectedCellIdx);
+function Row<R, SR>({
+  className,
+  rowIdx,
+  gridRowStart,
+  selectedCellIdx,
+  isRowSelectionDisabled,
+  isRowSelected,
+  copiedCellIdx,
+  draggedOverCellIdx,
+  lastFrozenColumnIndex,
+  row,
+  viewportColumns,
+  selectedCellEditor,
+  onCellClick,
+  onCellDoubleClick,
+  onCellContextMenu,
+  rowClass,
+  setDraggedOverRowIdx,
+  onMouseEnter,
+  onRowChange,
+  selectCell,
+  ...props
+}: RenderRowProps<R, SR>) {
+  const renderCell = useDefaultRenderers<R, SR>()!.renderCell!;
 
-  const handleRowChange = useLatestFunc((newRow: R) => {
-    onRowChange(rowIdx, newRow);
+  const handleRowChange = useLatestFunc((column: CalculatedColumn<R, SR>, newRow: R) => {
+    onRowChange(column, rowIdx, newRow);
   });
 
   function handleDragEnter(event: React.MouseEvent<HTMLDivElement>) {
@@ -48,8 +44,10 @@ function Row<R, SR>(
   className = clsx(
     rowClassname,
     `rdg-row-${rowIdx % 2 === 0 ? 'even' : 'odd'}`,
-    rovingClassName,
-    rowClass?.(row),
+    {
+      [rowSelectedClassname]: selectedCellIdx === -1
+    },
+    rowClass?.(row, rowIdx),
     className
   );
 
@@ -69,48 +67,48 @@ function Row<R, SR>(
       cells.push(selectedCellEditor);
     } else {
       cells.push(
-        <Cell
-          key={column.key}
-          column={column}
-          colSpan={colSpan}
-          row={row}
-          isCopied={copiedCellIdx === idx}
-          isDraggedOver={draggedOverCellIdx === idx}
-          isCellSelected={isCellSelected}
-          dragHandle={isCellSelected ? selectedCellDragHandle : undefined}
-          onRowClick={onRowClick}
-          onRowDoubleClick={onRowDoubleClick}
-          onRowChange={handleRowChange}
-          selectCell={selectCell}
-        />
+        renderCell(column.key, {
+          column,
+          colSpan,
+          row,
+          rowIdx,
+          isCopied: copiedCellIdx === idx,
+          isDraggedOver: draggedOverCellIdx === idx,
+          isCellSelected,
+          onClick: onCellClick,
+          onDoubleClick: onCellDoubleClick,
+          onContextMenu: onCellContextMenu,
+          onRowChange: handleRowChange,
+          selectCell
+        })
       );
     }
   }
 
+  const selectionValue = useMemo(
+    (): RowSelectionContextValue => ({ isRowSelected, isRowSelectionDisabled }),
+    [isRowSelectionDisabled, isRowSelected]
+  );
+
   return (
-    <RowSelectionProvider value={isRowSelected}>
+    <RowSelectionContext value={selectionValue}>
       <div
         role="row"
-        ref={useCombinedRefs(ref, rowRef)}
-        tabIndex={tabIndex}
         className={className}
         onMouseEnter={handleDragEnter}
-        style={
-          {
-            top,
-            '--rdg-row-height': `${height}px`
-          } as unknown as CSSProperties
-        }
+        style={getRowStyle(gridRowStart)}
         {...props}
       >
         {cells}
       </div>
-    </RowSelectionProvider>
+    </RowSelectionContext>
   );
 }
 
-export default memo(Row) as <R, SR>(props: RowRendererProps<R, SR>) => JSX.Element;
+const RowComponent = memo(Row) as <R, SR>(props: RenderRowProps<R, SR>) => React.JSX.Element;
 
-export const RowWithRef = memo(forwardRef(Row)) as <R, SR>(
-  props: RowRendererProps<R, SR> & RefAttributes<HTMLDivElement>
-) => JSX.Element;
+export default RowComponent;
+
+export function defaultRenderRow<R, SR>(key: React.Key, props: RenderRowProps<R, SR>) {
+  return <RowComponent key={key} {...props} />;
+}
