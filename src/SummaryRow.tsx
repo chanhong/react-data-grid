@@ -1,37 +1,50 @@
 import { memo } from 'react';
-import clsx from 'clsx';
 import { css } from '@linaria/core';
+import clsx from 'clsx';
 
-import { cell, row, rowClassname } from './style';
-import { getColSpan } from './utils';
+import { getColSpan, getRowStyle } from './utils';
+import type { RenderRowProps } from './types';
+import { cell, cellFrozen } from './style/cell';
+import {
+  bottomSummaryRowClassname,
+  rowClassname,
+  rowSelectedClassname,
+  topSummaryRowClassname
+} from './style/row';
 import SummaryCell from './SummaryCell';
-import type { CalculatedColumn, RowRendererProps } from './types';
-import { useRovingRowRef } from './hooks';
 
-type SharedRowRendererProps<R, SR> = Pick<RowRendererProps<R, SR>, 'viewportColumns' | 'rowIdx'>;
+type SharedRenderRowProps<R, SR> = Pick<
+  RenderRowProps<R, SR>,
+  'viewportColumns' | 'rowIdx' | 'gridRowStart' | 'selectCell'
+>;
 
-interface SummaryRowProps<R, SR> extends SharedRowRendererProps<R, SR> {
+interface SummaryRowProps<R, SR> extends SharedRenderRowProps<R, SR> {
   'aria-rowindex': number;
   row: SR;
-  bottom: number;
+  top: number | undefined;
+  bottom: number | undefined;
   lastFrozenColumnIndex: number;
   selectedCellIdx: number | undefined;
-  selectCell: (row: SR, column: CalculatedColumn<R, SR>) => void;
+  isTop: boolean;
 }
 
 const summaryRow = css`
-  &.${row} {
-    position: sticky;
-    z-index: 3;
-    grid-template-rows: var(--rdg-summary-row-height);
-    height: var(--rdg-summary-row-height); /* needed on Firefox */
-    line-height: var(--rdg-summary-row-height);
+  @layer rdg.SummaryRow {
+    > .${cell} {
+      position: sticky;
+    }
   }
 `;
 
-const summaryRowBorderClassname = css`
-  & > .${cell} {
-    border-top: 2px solid var(--rdg-summary-border-color);
+const topSummaryRow = css`
+  @layer rdg.SummaryRow {
+    > .${cell} {
+      z-index: 2;
+    }
+
+    > .${cellFrozen} {
+      z-index: 3;
+    }
   }
 `;
 
@@ -39,15 +52,17 @@ const summaryRowClassname = `rdg-summary-row ${summaryRow}`;
 
 function SummaryRow<R, SR>({
   rowIdx,
+  gridRowStart,
   row,
   viewportColumns,
+  top,
   bottom,
   lastFrozenColumnIndex,
   selectedCellIdx,
+  isTop,
   selectCell,
   'aria-rowindex': ariaRowIndex
 }: SummaryRowProps<R, SR>) {
-  const { ref, tabIndex, className } = useRovingRowRef(selectedCellIdx);
   const cells = [];
   for (let index = 0; index < viewportColumns.length; index++) {
     const column = viewportColumns[index];
@@ -64,6 +79,7 @@ function SummaryRow<R, SR>({
         column={column}
         colSpan={colSpan}
         row={row}
+        rowIdx={rowIdx}
         isCellSelected={isCellSelected}
         selectCell={selectCell}
       />
@@ -74,20 +90,27 @@ function SummaryRow<R, SR>({
     <div
       role="row"
       aria-rowindex={ariaRowIndex}
-      ref={ref}
-      tabIndex={tabIndex}
       className={clsx(
         rowClassname,
         `rdg-row-${rowIdx % 2 === 0 ? 'even' : 'odd'}`,
         summaryRowClassname,
-        { [summaryRowBorderClassname]: rowIdx === 0 },
-        className
+        {
+          [rowSelectedClassname]: selectedCellIdx === -1,
+          [`${topSummaryRowClassname} ${topSummaryRow}`]: isTop,
+          [bottomSummaryRowClassname]: !isTop
+        }
       )}
-      style={{ bottom }}
+      style={
+        {
+          ...getRowStyle(gridRowStart),
+          '--rdg-summary-row-top': top !== undefined ? `${top}px` : undefined,
+          '--rdg-summary-row-bottom': bottom !== undefined ? `${bottom}px` : undefined
+        } as unknown as React.CSSProperties
+      }
     >
       {cells}
     </div>
   );
 }
 
-export default memo(SummaryRow) as <R, SR>(props: SummaryRowProps<R, SR>) => JSX.Element;
+export default memo(SummaryRow) as <R, SR>(props: SummaryRowProps<R, SR>) => React.JSX.Element;
